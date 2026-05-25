@@ -6225,7 +6225,30 @@ function exportSVGToParent() {
 
   const boardFill = current.board.fill;
   if (!current.background?.includeInExport) current.board.set({ fill:'rgba(0,0,0,0)' });
-  const svg = canvas.toSVG({
+
+  const artboardSnapshot = artboards.map(ab => ({
+    id: ab.id,
+    left: ab.board?.left || 0,
+    top: ab.board?.top || 0,
+    width: ab.w || ab.board?.width || docW,
+    height: ab.h || ab.board?.height || docH,
+    name: ab.board?.dataName || 'Artboard',
+    clipContent: !!ab.clipContent,
+    exportEnabled: !!ab.exportEnabled,
+    background: {
+      enabled: !!ab.background?.enabled,
+      color: ab.background?.color || '#FFFFFF',
+      locked: !!ab.background?.locked,
+      includeInExport: ab.background?.includeInExport !== false
+    }
+  }));
+  const metadata = encodeURIComponent(JSON.stringify({
+    version: 1,
+    activeArtboardId,
+    artboards: artboardSnapshot
+  }));
+
+  let svg = canvas.toSVG({
     suppressPreamble: false,
     width: current.w,
     height: current.h,
@@ -6236,6 +6259,8 @@ function exportSVGToParent() {
       height: current.h
     }
   });
+  svg = svg.replace('<svg ', `<svg data-gobrand-artboards="${metadata}" `);
+
   if (!current.background?.includeInExport) current.board.set({ fill:boardFill });
   window.parent.postMessage({ type: 'geExportSVG', svg, name: $('projectNameInline')?.value || '' }, '*');
 }
@@ -6264,22 +6289,62 @@ function loadSVGFromParent(svgText) {
     return;
   }
 
-  // Detecta dimensões do SVG salvo para evitar abrir em uma prancheta padrão incorreta
-  try {
-    const doc = new DOMParser().parseFromString(raw, 'image/svg+xml');
-    const svg = doc.querySelector('svg');
-    if (svg) {
-      let w = Number((svg.getAttribute('width')||'').replace(/[^\d.]/g,''));
-      let h = Number((svg.getAttribute('height')||'').replace(/[^\d.]/g,''));
-      const vb = (svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
-      if ((!w || !h) &amp;&amp; vb.length===4 &amp;&amp; vb.every(Number.isFinite)) {
-        w = vb[2]; h = vb[3];
-      }
-      if (w&gt;0 &amp;&amp; h&gt;0) setArtboardSize(w, h);
-    }
-  } catch(_err) {}
+  const parsedDoc = new DOMParser().parseFromString(raw, 'image/svg+xml');
+  const parsedSvg = parsedDoc.querySelector('svg');
 
-  ensureArtboard();
+  let savedArtboards = [];
+  let savedActiveArtboardId = null;
+  try {
+    const encoded = parsedSvg?.getAttribute('data-gobrand-artboards') || '';
+    if (encoded) {
+      const payload = JSON.parse(decodeURIComponent(encoded));
+      savedActiveArtboardId = payload?.activeArtboardId || null;
+      savedArtboards = Array.isArray(payload?.artboards) ? payload.artboards : [];
+    }
+  } catch(_err) {
+    savedArtboards = [];
+  }
+
+  // Detecta dimensões do SVG salvo para evitar abrir em uma prancheta padrão incorreta
+  if (!savedArtboards.length) {
+    try {
+      if (parsedSvg) {
+        let w = Number((parsedSvg.getAttribute('width')||'').replace(/[^\d.]/g,''));
+        let h = Number((parsedSvg.getAttribute('height')||'').replace(/[^\d.]/g,''));
+        const vb = (parsedSvg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
+        if ((!w || !h) &amp;&amp; vb.length===4 &amp;&amp; vb.every(Number.isFinite)) {
+          w = vb[2]; h = vb[3];
+        }
+        if (w&gt;0 &amp;&amp; h&gt;0) setArtboardSize(w, h);
+      }
+    } catch(_err) {}
+  }
+
+  if (savedArtboards.length) {
+    savedArtboards.forEach((ab, idx) => {
+      const next = createArtboard(Number(ab.left) || 0, Number(ab.top) || 0, Math.max(1, Number(ab.width) || docW), Math.max(1, Number(ab.height) || docH));
+      next.id = String(ab.id || next.id);
+      if (next.board) next.board.artboardId = next.id;
+      if (next.board) next.board.dataName = String(ab.name || `Artboard ${idx + 1}`);
+      next.clipContent = !!ab.clipContent;
+      next.exportEnabled = ab.exportEnabled !== false;
+      next.background = {
+        enabled: ab.background?.enabled !== false,
+        color: ab.background?.color || '#FFFFFF',
+        locked: !!ab.background?.locked,
+        includeInExport: ab.background?.includeInExport !== false
+      };
+      syncArtboardAuxGeometry(next);
+      applyArtboardVisualState(next);
+    });
+    activeArtboardId = savedActiveArtboardId && getArtboardById(savedActiveArtboardId)
+      ? savedActiveArtboardId
+      : artboards[0]?.id || null;
+    syncActiveArtboardRefs();
+    orderArtboard();
+  } else {
+    ensureArtboard();
+  }
 
   fabric.loadSVGFromString(raw, (objects) =&gt; {
     if (!objects || !objects.length) {
@@ -6299,15 +6364,19 @@ function loadSVGFromParent(svgText) {
     const currentAb = getActiveArtboard();
     const anchorX = currentAb?.board?.left || 0;
     const anchorY = currentAb?.board?.top || 0;
-    const artW = currentAb?.w || docW;
-    const artH = currentAb?.h || docH;
+    const artboardGeometry = artboards.map(ab => ({
+      left: Number(ab.board?.left) || 0,
+      top: Number(ab.board?.top) || 0,
+      width: Number(ab.w) || Number(ab.board?.width) || docW,
+      height: Number(ab.h) || Number(ab.board?.height) || docH
+    }));
 
-    const isLikelyArtboardBg = (obj, lx, ly) =&gt; {
+    const isLikelyArtboardBg = (obj, worldX, worldY) =&gt; {
       if (!obj || obj.type !== 'rect') return false;
       const w = Math.abs((obj.width || 0) * (obj.scaleX || 1));
       const h = Math.abs((obj.height || 0) * (obj.scaleY || 1));
       const near = (a,b,t=2) =&gt; Math.abs((a||0) - (b||0)) &lt;= t;
-      return near(lx, 0) &amp;&amp; near(ly, 0) &amp;&amp; near(w, artW) &amp;&amp; near(h, artH);
+      return artboardGeometry.some(g => near(worldX, g.left) &amp;&amp; near(worldY, g.top) &amp;&amp; near(w, g.width) &amp;&amp; near(h, g.height));
     };
 
     objects.forEach(o =&gt; {
@@ -6317,7 +6386,7 @@ function loadSVGFromParent(svgText) {
 
       // Evita duplicar o papel/artboard ao reabrir SVG exportado do editor.
       // Ignora TODOS os retângulos que batem com a geometria+visual do board.
-      if (isLikelyArtboardBg(o, localX, localY)) {
+      if (isLikelyArtboardBg(o, anchorX + localX, anchorY + localY)) {
         const hasBoardStroke = (o.strokeWidth || 0) &gt;= 0.9 &amp;&amp; (o.strokeWidth || 0) &lt;= 1.1;
         const hasBoardRound = Math.abs((o.rx || 0) - 2) &lt;= 0.6 &amp;&amp; Math.abs((o.ry || 0) - 2) &lt;= 0.6;
         const fill = String(o.fill || '').toLowerCase();
