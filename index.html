@@ -498,7 +498,7 @@
             </div>
             <div id="extraUploadList" class="stack" style="gap:8px"></div>
             <button class="btn btn-ghost" onclick="addExtraLogoSlot()" style="justify-content:center">+ Adicionar logo / texto</button>
-            <div class="field"><label class="field-label">Altura X (%)</label><input id="inpXHeight" class="inp" type="range" min="20" max="90" step="1" oninput="updateBrandImportSetting('xHeight',this.value)"></div>
+            <div class="field" id="fieldXHeight"><label class="field-label">Altura X (%)</label><input id="inpXHeight" class="inp" type="range" min="20" max="90" step="1" oninput="updateBrandImportSetting('xHeight',this.value)"></div>
             <div class="field"><label class="field-label">Área de respiro (%)</label><input id="inpSafeMargin" class="inp" type="range" min="0" max="40" step="1" oninput="updateBrandImportSetting('safeMargin',this.value)"></div>
             <button class="btn btn-primary" onclick="applyBrandImportToSlots()" style="justify-content:center">Aplicar ajustes da marca</button>
             <div id="brandImportStats" class="import-stats">Sem ativos importados.</div>
@@ -582,6 +582,46 @@
 <input id="fileLogoSq" type="file" accept=".svg,image/*" style="display:none">
 <input id="fileLogoWd" type="file" accept=".svg,image/*" style="display:none">
 <input id="fileLogoExtra" type="file" accept=".svg,image/*" style="display:none">
+
+<!-- STRUCTURE WIZARD MODAL -->
+<div id="structureBackdrop" class="briefing-backdrop">
+  <div class="briefing-modal wizard-modal">
+    <div class="briefing-head">
+      <div>
+        <div class="briefing-title">Estruturar Identidade Visual</div>
+        <p id="wizardStepLabel">Passo 1 de 7 — Tipo de estrutura</p>
+      </div>
+      <button class="btn-icon" onclick="closeStructureWizard()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="wizard-steps">
+      <span class="wiz-step active" data-step="1">1. Tipo</span>
+      <span class="wiz-conn"></span>
+      <span class="wiz-step" data-step="2">2. Upload</span>
+      <span class="wiz-conn"></span>
+      <span class="wiz-step" data-step="3">3. Módulo 1x</span>
+      <span class="wiz-conn"></span>
+      <span class="wiz-step" data-step="4">4. Assinaturas</span>
+      <span class="wiz-conn"></span>
+      <span class="wiz-step" data-step="5">5. Tipografia</span>
+      <span class="wiz-conn"></span>
+      <span class="wiz-step" data-step="6">6. Cores</span>
+      <span class="wiz-conn"></span>
+      <span class="wiz-step" data-step="7">7. Revisão</span>
+    </div>
+    <div class="briefing-body" id="wizardBody"></div>
+    <div class="wizard-actions">
+      <button class="btn btn-ghost" id="wizBackBtn" onclick="wizardPrev()" style="display:none">Voltar</button>
+      <div></div>
+      <button class="btn btn-primary" id="wizNextBtn" onclick="wizardNext()">Próximo</button>
+    </div>
+  </div>
+</div>
+<!-- end wizard -->
+
+<!-- wizard hidden file inputs -->
+<input id="fileWizardSvg" type="file" accept=".svg" style="display:none">
 
 
 <!-- =========================================================

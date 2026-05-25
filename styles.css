@@ -1451,3 +1451,125 @@ textarea:focus-visible {
   pointer-events:none;
 }
 .save-status.visible{ opacity:1; transform:translateY(0); }
+
+/* ─── STRUCTURE WIZARD ─────────────────────── */
+.wizard-steps{display:flex;align-items:center;gap:8px;margin-bottom:20px;padding:0 4px}
+.wiz-step{padding:6px 16px;border-radius:20px;background:var(--surface2);color:var(--ink3);font-size:12px;font-weight:600;white-space:nowrap;transition:all .14s}
+.wiz-step.active{background:var(--accent);color:#fff}
+.wiz-conn{flex:1;height:2px;background:var(--border2)}
+.wizard-actions{display:flex;align-items:center;justify-content:space-between;margin-top:16px;gap:10px}
+
+/* type cards */
+.wiz-type-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:8px 0}
+.wiz-type-card{border:2px solid var(--border);border-radius:14px;padding:24px 16px;cursor:pointer;text-align:center;transition:all .14s;background:var(--surface2)}
+.wiz-type-card:hover{border-color:var(--accent);background:var(--surface)}
+.wiz-type-card.selected{border-color:var(--accent);background:rgba(127,90,240,.12)}
+.wiz-type-card .wiz-type-icon{font-size:28px;margin-bottom:10px;display:block}
+.wiz-type-card .wiz-type-name{font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px}
+.wiz-type-card .wiz-type-desc{font-size:11px;color:var(--ink3);line-height:1.4}
+
+/* upload step */
+.wiz-upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0}
+.wiz-upload-slot{border:2px dashed var(--border2);border-radius:14px;padding:20px;text-align:center;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:all .14s;background:var(--surface)}
+.wiz-upload-slot.has-asset{border-color:var(--accent);border-style:solid}
+.wiz-upload-slot .wiz-upload-preview{max-width:100%;max-height:100px;border-radius:8px;overflow:hidden}
+.wiz-upload-slot .wiz-upload-preview svg,
+.wiz-upload-slot .wiz-upload-preview img{width:auto;height:80px;display:block;margin:0 auto}
+.wiz-upload-slot .wiz-upload-label{font-size:13px;font-weight:600;color:var(--ink2)}
+.wiz-upload-slot .wiz-upload-hint{font-size:11px;color:var(--ink3)}
+
+/* canvas selection */
+.wiz-canvas-wrap{position:relative;width:100%;height:380px;background:var(--surface);border:1px solid var(--border2);border-radius:14px;overflow:hidden;cursor:crosshair;margin:8px 0}
+.wiz-canvas-wrap svg{width:100%;height:100%;display:block;pointer-events:none}
+.wiz-sel-rect{position:absolute;border:2px dashed var(--accent);background:rgba(127,90,240,.12);pointer-events:none;display:none}
+.wiz-sel-info{display:flex;align-items:center;gap:16px;padding:12px 16px;background:var(--surface2);border-radius:12px;margin-top:8px}
+.wiz-sel-info .wiz-sel-value{font-size:20px;font-weight:800;color:var(--accent);font-family:var(--mono)}
+.wiz-sel-info .wiz-sel-label{font-size:12px;color:var(--ink2)}
+.wiz-sel-info .wiz-sel-preview{width:40px;height:40px;border:2px solid var(--accent);border-radius:8px;overflow:hidden;flex-shrink:0}
+.wiz-sel-info .wiz-sel-preview svg,
+.wiz-sel-info .wiz-sel-preview img{width:100%;height:100%;object-fit:contain}
+
+/* grid overlay */
+.wiz-grid-overlay{position:absolute;inset:0;pointer-events:none}
+.wiz-grid-line{position:absolute;background:rgba(127,90,240,.2)}
+.wiz-grid-line.h{height:1px;left:0;right:0}
+.wiz-grid-line.v{width:1px;top:0;bottom:0}
+.wiz-grid-info{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+.wiz-grid-info .wiz-grid-badge{padding:4px 12px;background:var(--surface2);border-radius:8px;font-size:11px;color:var(--ink2);font-weight:600}
+.wiz-grid-info .wiz-grid-badge strong{color:var(--accent);font-weight:700}
+
+/* wizard typography */
+.wiz-font-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0}
+.wiz-font-card{border:1px solid var(--border2);border-radius:14px;padding:16px;background:var(--surface2)}
+.wiz-font-card .field-label{margin-bottom:4px}
+.wiz-font-card select{width:100%;margin-bottom:10px}
+.wiz-font-preview{padding:16px;background:var(--surface);border-radius:10px;text-align:center;font-size:24px;color:var(--ink);min-height:56px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border)}
+
+/* wizard colors */
+.wiz-color-grid{display:flex;flex-direction:column;gap:10px;margin:8px 0}
+.wiz-color-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-radius:10px;border:1px solid var(--border2)}
+.wiz-color-row .wiz-color-swatch{width:28px;height:28px;border-radius:8px;border:1px solid var(--border2);flex-shrink:0;cursor:pointer}
+.wiz-color-row input[type="text"]{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;color:var(--ink);font-family:var(--mono);font-size:11px;width:80px}
+.wiz-color-row input[type="number"]{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;color:var(--ink);font-size:11px;width:50px}
+.wiz-color-row .wiz-color-name{color:var(--ink);font-size:12px;font-weight:600;flex:1}
+.wiz-color-row .btn-icon{width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:6px;background:transparent;border:1px solid transparent;color:var(--ink3);cursor:pointer}
+.wiz-color-row .btn-icon:hover{color:var(--danger);background:rgba(232,93,93,.1);border-color:rgba(232,93,93,.2)}
+.wiz-color-add{display:flex;align-items:center;gap:10px;padding:12px;border:2px dashed var(--border2);border-radius:10px;cursor:pointer;justify-content:center;color:var(--ink3);font-size:13px;font-weight:600;transition:all .14s}
+.wiz-color-add:hover{border-color:var(--accent);color:var(--accent)}
+
+/* wizard modal large */
+.wizard-modal{width:min(95vw,1400px)!important;max-height:90vh!important}
+.wizard-modal .briefing-body{flex:1;overflow:hidden;display:flex;flex-direction:column}
+
+/* wizard signatures — redesigned modular */
+.wiz-sig-layout{display:grid;grid-template-columns:200px 1fr;gap:16px;flex:1;min-height:0}
+.wiz-sig-list{background:var(--surface2);border-radius:14px;border:1px solid var(--border2);padding:10px;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.wiz-sig-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:all .14s;border:2px solid transparent;background:var(--surface)}
+.wiz-sig-item:hover{border-color:var(--border2)}
+.wiz-sig-item.active{border-color:var(--accent);background:rgba(127,90,240,.08)}
+.wiz-sig-item .wiz-sig-icon{width:28px;height:28px;border-radius:6px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--ink2);flex-shrink:0}
+.wiz-sig-item .wiz-sig-name{font-size:12px;font-weight:600;color:var(--ink);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wiz-sig-item .wiz-sig-del{width:20px;height:20px;border:none;background:transparent;color:var(--ink3);cursor:pointer;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1}
+.wiz-sig-item .wiz-sig-del:hover{color:var(--danger);background:rgba(232,93,93,.1)}
+.wiz-sig-add{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;border:2px dashed var(--border2);border-radius:10px;cursor:pointer;color:var(--ink3);font-size:11px;font-weight:600;transition:all .14s;margin-top:auto}
+.wiz-sig-add:hover{border-color:var(--accent);color:var(--accent)}
+
+/* canvas area — full height, big */
+.wiz-sig-canvas-wrap{position:relative;flex:1;background:var(--surface);border:1px solid var(--border2);border-radius:14px;overflow:hidden;cursor:default;min-height:400px}
+.wiz-sig-canvas-wrap .wiz-sig-label-top{position:absolute;top:6px;left:10px;font-size:9px;color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.3px;pointer-events:none;z-index:2}
+.wiz-sig-canvas-wrap .wiz-sig-label-bottom{position:absolute;bottom:6px;right:10px;font-size:9px;color:var(--ink3);font-weight:600;pointer-events:none;z-index:2}
+
+/* margin zone */
+.wiz-sig-margin{position:absolute;inset:0;pointer-events:none;z-index:1}
+.wiz-sig-margin-fill{position:absolute;inset:0;background:rgba(15,15,20,.6);z-index:1}
+.wiz-sig-margin-inner{position:absolute;border:1px dashed rgba(127,90,240,.25);z-index:2}
+
+/* safe zone */
+.wiz-sig-safe{position:absolute;pointer-events:none;z-index:3}
+.wiz-sig-safe-fill{position:absolute;inset:0;border:1px dashed rgba(45,182,125,.3);background:rgba(45,182,125,.04);z-index:1}
+.wiz-sig-safe-label{position:absolute;top:-14px;left:4px;font-size:8px;color:var(--accent2);font-weight:700;white-space:nowrap;text-transform:uppercase;letter-spacing:.3px;z-index:2}
+
+/* elements */
+.wiz-sig-element{position:absolute;cursor:grab;display:flex;align-items:center;justify-content:center;z-index:5;border-radius:4px;transition:box-shadow .14s;user-select:none}
+.wiz-sig-element:hover{box-shadow:0 0 0 2px var(--accent);z-index:6}
+.wiz-sig-element.dragging{cursor:grabbing;box-shadow:0 0 0 2px var(--accent),0 0 20px rgba(127,90,240,.3);z-index:10;opacity:.9}
+.wiz-sig-element svg,.wiz-sig-element img{width:100%;height:100%;pointer-events:none;display:block}
+
+/* grid overlay */
+.wiz-sig-grid{position:absolute;inset:0;pointer-events:none;z-index:0}
+.wiz-sig-grid-line{position:absolute;background:rgba(127,90,240,.1)}
+.wiz-sig-grid-line.h{height:1px;left:0;right:0}
+.wiz-sig-grid-line.v{width:1px;top:0;bottom:0}
+.wiz-sig-grid-line.major{background:rgba(127,90,240,.2)}
+
+/* snap indicator */
+.wiz-sig-snap{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--accent);pointer-events:none;z-index:7;display:none}
+
+/* controls bar — modular, compact */
+.wiz-sig-controls{display:flex;gap:20px;padding:10px 16px;background:var(--surface2);border-radius:10px;border:1px solid var(--border2);align-items:center;flex-wrap:wrap;margin-top:10px}
+.wiz-sig-ctrl-group{display:flex;align-items:center;gap:6px}
+.wiz-sig-ctrl-group label{font-size:10px;color:var(--ink3);font-weight:700;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.wiz-sig-ctrl-group .wiz-sig-xval{font-size:13px;font-weight:800;color:var(--accent);font-family:var(--mono);min-width:28px;text-align:center}
+.wiz-sig-ctrl-group input[type="range"]{width:60px;height:4px;accent-color:var(--accent);cursor:pointer}
+.wiz-sig-ctrl-group input[type="number"]{background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:2px 6px;color:var(--ink);font-family:var(--mono);font-size:11px;width:36px;text-align:center}
+.wiz-sig-ctrl-divider{width:1px;height:24px;background:var(--border2);flex-shrink:0}

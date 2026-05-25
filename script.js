@@ -129,13 +129,27 @@ function showSavedIndicator(){
 function load(){ return window.Storage ? window.Storage.load() : []; }
 function save(arr){ persistProjects(arr); }
 
-function mkProject(name=""){
+function mkProject(name="", structureData){
+  const s = structureData || {};
   return {
     id:uid("p"), name:name||"Projeto",
-    about:"", fontPri:"Outfit", fontSec:"Sora",
-    typo:DEFAULT_TYPO(), colors:DEFAULT_COLORS(),
-    logoSq:null, logoWd:null,
-    brandImport:{xHeight:52,safeMargin:12,enabled:false,lastStats:null,place:{sq:{x:8,y:10,scale:100},wd:{x:52,y:52,scale:100}},extras:[]},
+    about:"",
+    fontPri: s.fontPri || "Outfit",
+    fontSec: s.fontSec || "Sora",
+    typo: s.typo || DEFAULT_TYPO(),
+    colors: s.colors || DEFAULT_COLORS(),
+    logoSq: s.logoSq || null, logoWd: s.logoWd || null,
+    brandImport:{
+      structureType: s.type || null,
+      moduleSource: s.moduleSource || null,
+      signatures: s.signatures || null,
+      xHeight: s.modulePx || 52,
+      xHeightRef: s.selection || null,
+      safeMargin:12, enabled:false, lastStats:null,
+      place:{sq:{x:8,y:10,scale:100},wd:{x:52,y:52,scale:100}},
+      extras:[],
+      grid: s.grid || null
+    },
     exportLibrary:null,
     applications:[],
     createdAt:Date.now(), updatedAt:Date.now()
@@ -163,8 +177,11 @@ function ensureBrandImportState(p){
   if(!p.brandImport.place.sq) p.brandImport.place.sq={x:8,y:10,scale:100};
   if(!p.brandImport.place.wd) p.brandImport.place.wd={x:52,y:52,scale:100};
   if(!Array.isArray(p.brandImport.extras)) p.brandImport.extras=[];
-  p.brandImport.xHeight=clamp(+p.brandImport.xHeight||52,20,90);
   p.brandImport.safeMargin=clamp(+p.brandImport.safeMargin||12,0,40);
+  // projetos novos (com estrutura) não clampam xHeight como %
+  if(!p.brandImport.structureType){
+    p.brandImport.xHeight=clamp(+p.brandImport.xHeight||52,20,90);
+  }
 }
 function ensureExportLibrary(p){
   if(!p.exportLibrary){
@@ -440,11 +457,7 @@ function renderHome(){
 
 
 function createProject(){
-  const p=mkProject(`Projeto ${S.projects.length+1}`);
-  S.projects.unshift(p);save(S.projects);
-  renderHome();
-  openProject(p.id);
-  toast("Projeto criado!","success");
+  openStructureWizard();
 }
 
 function openProject(pid){
@@ -707,7 +720,24 @@ function renderBrandImportWorkspace(){
   }
   const st=p.brandImport.lastStats;
   if($("brandImportStats")){
-    $("brandImportStats").textContent = st.logos ? `${st.logos} ativo(s) • vetorial: ${st.vectors} • bitmap: ${st.bitmaps} • Altura X ${p.brandImport.xHeight}% • Respiro ${p.brandImport.safeMargin}%` : "Sem ativos importados.";
+    const srcLabel = p.brandImport.moduleSource ? ` (${p.brandImport.moduleSource==='typography'?'Tipografia':'Símbolo'})` : '';
+    const xhLabel = p.brandImport.structureType ? `Módulo 1x = ${p.brandImport.xHeight}px${srcLabel}` : `Altura X ${p.brandImport.xHeight}%`;
+    $("brandImportStats").textContent = st.logos ? `${st.logos} ativo(s) • vetorial: ${st.vectors} • bitmap: ${st.bitmaps} • ${xhLabel} • Respiro ${p.brandImport.safeMargin}%` : "Sem ativos importados.";
+  }
+  // show/hide xHeight slider for structured vs legacy projects
+  const xhField = $("fieldXHeight");
+  if(xhField) xhField.style.display = p.brandImport.structureType ? "none" : "";
+  // add grid info for structured projects
+  if(p.brandImport?.grid){
+    const statsEl = $("brandImportStats");
+    if(statsEl && !document.querySelector(".wiz-grid-badge")){
+      const g = p.brandImport.grid;
+      const badge = document.createElement("div");
+      badge.className = "wiz-grid-info";
+      badge.style.marginTop = "8px";
+      badge.innerHTML = `<span class="wiz-grid-badge">Módulo: <strong>${g.modulePx}px</strong></span><span class="wiz-grid-badge">Grid: <strong>${g.cols} × ${g.rows}</strong></span>`;
+      statsEl.after(badge);
+    }
   }
   renderCompositePreview(p);
 }
@@ -755,6 +785,27 @@ function renderCompositePreview(p){
     renderAssetInto(layer,item.asset);
     host.appendChild(layer);
   });
+  // grid overlay for structured projects
+  if(p.brandImport?.grid && host.offsetWidth > 0){
+    const g = p.brandImport.grid;
+    const overlay = document.createElement('div');
+    overlay.className = 'wiz-grid-overlay';
+    const scaleW = host.offsetWidth / g.containerW;
+    const scaleH = host.offsetHeight / g.containerH;
+    g.hLines.forEach(y => {
+      const line = document.createElement('div');
+      line.className = 'wiz-grid-line h';
+      line.style.top = (y * scaleH / host.offsetHeight * 100) + '%';
+      overlay.appendChild(line);
+    });
+    g.vLines.forEach(x => {
+      const line = document.createElement('div');
+      line.className = 'wiz-grid-line v';
+      line.style.left = (x * scaleW / host.offsetWidth * 100) + '%';
+      overlay.appendChild(line);
+    });
+    host.appendChild(overlay);
+  }
 }
 
 function updateBrandImportSetting(key,val){
@@ -844,6 +895,819 @@ $("fileLogoExtra")?.addEventListener("change",async ()=>{
 async function readAsset(file){
   if(file.name.toLowerCase().endsWith(".svg")||file.type==="image/svg+xml") return {type:"svg",data:await file.text()};
   return new Promise((res,rej)=>{ const r=new FileReader();r.onload=()=>res({type:"img",data:r.result});r.onerror=rej;r.readAsDataURL(file); });
+}
+
+/* ============================================================
+   STRUCTURE WIZARD
+============================================================ */
+const wizardState = { step:0, type:null, assets:{}, selection:null, modulePx:null, grid:null, selCanvasInfo:{}, fontPri:'Outfit', fontSec:'Sora', colors:null, signatures:null, sigIdx:0 };
+
+function openStructureWizard(){
+  wizardState.step = 1;
+  wizardState.type = null;
+  wizardState.assets = {};
+  wizardState.selection = null;
+  wizardState.modulePx = null;
+  wizardState.grid = null;
+  wizardState.fontPri = 'Outfit';
+  wizardState.fontSec = 'Sora';
+  wizardState.colors = null;
+  wizardState.signatures = null;
+  wizardState.sigIdx = 0;
+  const bd = $("structureBackdrop");
+  if(bd) bd.style.display = "flex";
+  renderWizardStep(1);
+}
+
+function closeStructureWizard(){
+  const bd = $("structureBackdrop");
+  if(bd) bd.style.display = "none";
+  // cleanup canvas listeners
+  const cw = $("wizardCanvasWrap");
+  if(cw) cw.innerHTML = "";
+}
+// click outside to close
+$("structureBackdrop")?.addEventListener("click", e => {
+  if(e.target === $("structureBackdrop")) closeStructureWizard();
+});
+
+function wizardNext(){
+  const s = wizardState.step;
+  if(s === 1 && !wizardState.type) { toast("Selecione um tipo de estrutura","error"); return; }
+  if(s === 2) {
+    const has = wizardState.type==='both'
+      ? (wizardState.assets.typography && wizardState.assets.symbol)
+      : !!wizardState.assets[wizardState.type];
+    if(!has) { toast("Faça o upload do SVG obrigatório","error"); return; }
+  }
+  if(s === 3 && !wizardState.modulePx) { toast("Selecione uma região no canvas","error"); return; }
+  if(s === 6 && (!wizardState.colors || !wizardState.colors.length)) { toast("Adicione pelo menos uma cor","error"); return; }
+  if(s >= 7) { completeWizard(); return; }
+  wizardState.step++;
+  renderWizardStep(wizardState.step);
+}
+
+function wizardPrev(){
+  if(wizardState.step <= 1) return;
+  wizardState.step--;
+  renderWizardStep(wizardState.step);
+}
+
+function renderWizardStep(step){
+  const body = $("wizardBody");
+  const label = $("wizardStepLabel");
+  const backBtn = $("wizBackBtn");
+  const nextBtn = $("wizNextBtn");
+  if(!body) return;
+
+  // update step indicators
+  document.querySelectorAll(".wiz-step").forEach(el => {
+    el.classList.toggle("active", +el.dataset.step === step);
+  });
+
+  backBtn.style.display = step > 1 ? "" : "none";
+  nextBtn.textContent = step >= 7 ? "Finalizar" : "Próximo";
+
+  switch(step){
+    case 1: renderWizardStep1(body, label); break;
+    case 2: renderWizardStep2(body, label); break;
+    case 3: renderWizardStep3(body, label); break;
+    case 4: renderWizardStep4(body, label); break;
+    case 5: renderWizardStep5(body, label); break;
+    case 6: renderWizardStep6(body, label); break;
+    case 7: renderWizardStep7(body, label); break;
+  }
+}
+
+/* ---------- STEP 1: TYPE SELECTION ---------- */
+function renderWizardStep1(body, label){
+  label.textContent = "Passo 1 de 7 — Tipo de estrutura";
+  const types = [
+    {id:'typography', icon:'A', name:'Tipografia', desc:'Marca composta apenas por tipografia e lettering'},
+    {id:'symbol', icon:'◇', name:'Símbolo', desc:'Marca composta apenas por símbolo ou ícone'},
+    {id:'both', icon:'✦', name:'Tipografia + Símbolo', desc:'Estrutura clássica com lettering + símbolo'}
+  ];
+  body.innerHTML = `<p style="margin-bottom:14px;color:var(--ink2);font-size:13px">Selecione o tipo de estrutura da sua identidade visual:</p>
+    <div class="wiz-type-grid">
+      ${types.map(t => `
+        <div class="wiz-type-card${wizardState.type===t.id?' selected':''}" data-type="${t.id}" onclick="selectWizardType('${t.id}')">
+          <span class="wiz-type-icon">${t.icon}</span>
+          <div class="wiz-type-name">${t.name}</div>
+          <div class="wiz-type-desc">${t.desc}</div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+function selectWizardType(type){
+  wizardState.type = type;
+  document.querySelectorAll(".wiz-type-card").forEach(c => c.classList.toggle("selected", c.dataset.type === type));
+}
+
+/* ---------- STEP 2: UPLOAD SVGS ---------- */
+function renderWizardStep2(body, label){
+  label.textContent = "Passo 2 de 7 — Upload dos arquivos";
+  const slots = wizardState.type === 'both'
+    ? [{id:'typography', name:'Logotipo tipográfico'}, {id:'symbol', name:'Símbolo / Ícone'}]
+    : [{id:wizardState.type, name: wizardState.type==='typography' ? 'Logotipo tipográfico' : 'Símbolo / Ícone'}];
+
+  body.innerHTML = `<p style="margin-bottom:14px;color:var(--ink2);font-size:13px">Faça upload dos arquivos SVG correspondentes:</p>
+    <div class="wiz-upload-grid">
+      ${slots.map(s => `
+        <div class="wiz-upload-slot${wizardState.assets[s.id]?' has-asset':''}" id="wizSlot-${s.id}">
+          ${wizardState.assets[s.id]
+            ? `<div class="wiz-upload-preview">${wizardState.assets[s.id].data}</div>`
+            : `<div class="wiz-upload-label">${s.name}</div>
+               <div class="wiz-upload-hint">Clique para enviar SVG</div>`}
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 14px" onclick="triggerWizardUpload('${s.id}')">
+            ${wizardState.assets[s.id] ? 'Substituir' : 'Selecionar arquivo'}
+          </button>
+          ${wizardState.assets[s.id] ? `<button class="btn btn-ghost mini" onclick="clearWizardAsset('${s.id}')" style="font-size:11px">Limpar</button>` : ''}
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+function triggerWizardUpload(slotId){
+  const inp = $("fileWizardSvg");
+  inp.dataset.target = slotId;
+  inp.value = "";
+  inp.click();
+}
+
+function clearWizardAsset(slotId){
+  delete wizardState.assets[slotId];
+  renderWizardStep(2);
+}
+
+// fileWizardSvg change handler — reads SVG and stores in wizardState.assets
+document.addEventListener("change", async function wizardFileHandler(e){
+  if(e.target.id !== "fileWizardSvg") return;
+  const slotId = e.target.dataset.target;
+  const file = e.target.files?.[0];
+  if(!file || !slotId) return;
+  const asset = await readAsset(file);
+  if(asset.type !== "svg") { toast("Apenas arquivos SVG são aceitos","error"); return; }
+  wizardState.assets[slotId] = asset;
+  renderWizardStep(2);
+});
+
+/* ---------- STEP 3: VISUAL 1x SELECTION ---------- */
+function renderWizardStep3(body, label){
+  label.textContent = "Passo 3 de 7 — Definir módulo estrutural 1x";
+
+  // determinar origem do módulo 1x
+  if(!wizardState.moduleSource){
+    wizardState.moduleSource = wizardState.type === 'both' ? 'typography' : wizardState.type;
+  }
+  const asset = wizardState.assets[wizardState.moduleSource];
+  if(!asset) { body.innerHTML = `<p style="color:var(--danger)">Nenhum asset disponível para a origem selecionada. Volte e faça o upload.</p>`; return; }
+
+  const sourceChooser = wizardState.type === 'both' ? `
+    <div style="display:flex;gap:12px;margin-bottom:12px;padding:10px 14px;background:var(--surface2);border-radius:10px;align-items:center">
+      <span style="font-size:12px;color:var(--ink2);font-weight:600">Altura de X vem de:</span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--ink)"><input type="radio" name="wizModuleSource" value="typography" ${wizardState.moduleSource==='typography'?'checked':''} onchange="selectModuleSource('typography')"> Tipografia</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--ink)"><input type="radio" name="wizModuleSource" value="symbol" ${wizardState.moduleSource==='symbol'?'checked':''} onchange="selectModuleSource('symbol')"> Símbolo</label>
+    </div>` : '';
+
+  body.innerHTML = sourceChooser + `
+    <p style="margin-bottom:10px;color:var(--ink2);font-size:13px">Arraste sobre a área que representa o <strong>módulo estrutural principal</strong> (ex: altura da letra "X", altura do símbolo). Essa área se tornará <strong>1x</strong>.</p>
+    <div class="wiz-canvas-wrap" id="wizardCanvasWrap">
+      ${asset.data}
+      <div class="wiz-sel-rect" id="wizSelRect"></div>
+    </div>
+    <div id="wizSelInfo" class="wiz-sel-info" style="${wizardState.modulePx ? '' : 'display:none'}">
+      <div class="wiz-sel-preview" id="wizSelPreview">${wizardState.selection ? extractSvgRegion(asset.data, wizardState.selection) : ''}</div>
+      <div>
+        <div class="wiz-sel-label">Módulo estrutural (${wizardState.moduleSource==='typography'?'Tipografia':'Símbolo'})</div>
+        <div class="wiz-sel-value">${wizardState.modulePx || '—'} px = 1x</div>
+      </div>
+      <div style="margin-left:auto">
+        <button class="btn btn-ghost" style="font-size:11px" onclick="resetWizardSelection()">Redefinir</button>
+      </div>
+    </div>`;
+
+  initWizardCanvas();
+}
+
+function selectModuleSource(source){
+  wizardState.moduleSource = source;
+  wizardState.selection = null;
+  wizardState.modulePx = null;
+  renderWizardStep(3);
+}
+
+function initWizardCanvas(){
+  const wrap = $("wizardCanvasWrap");
+  if(!wrap) return;
+  let startX, startY, drawing = false;
+
+  function getPos(e){
+    const r = wrap.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+
+  function onStart(e){
+    e.preventDefault();
+    const p = getPos(e);
+    startX = p.x; startY = p.y;
+    drawing = true;
+    const rect = $("wizSelRect");
+    if(rect) { rect.style.display = "block"; rect.style.left = startX + "px"; rect.style.top = startY + "px"; rect.style.width = "0"; rect.style.height = "0"; }
+  }
+
+  function onMove(e){
+    if(!drawing) return;
+    e.preventDefault();
+    const p = getPos(e);
+    const x = Math.min(startX, p.x), y = Math.min(startY, p.y);
+    const w = Math.abs(p.x - startX), h = Math.abs(p.y - startY);
+    const rect = $("wizSelRect");
+    if(rect) { rect.style.left = x + "px"; rect.style.top = y + "px"; rect.style.width = w + "px"; rect.style.height = h + "px"; }
+  }
+
+  function onEnd(e){
+    if(!drawing) return;
+    drawing = false;
+    const p = getPos(e);
+    const x = Math.min(startX, p.x), y = Math.min(startY, p.y);
+    const w = Math.abs(p.x - startX), h = Math.abs(p.y - startY);
+    if(w < 5 || h < 5) { $("wizSelRect").style.display = "none"; return; }
+    wizardState.selection = { x, y, w, h };
+    wizardState.modulePx = Math.round(h);
+    renderWizardStep(3);
+  }
+
+  // listeners diretamente no wrap (innerHTML já limpou elementos anteriores)
+  wrap.addEventListener("mousedown", onStart);
+  wrap.addEventListener("mousemove", onMove);
+  wrap.addEventListener("mouseup", onEnd);
+  wrap.addEventListener("mouseleave", onEnd);
+  wrap.addEventListener("touchstart", onStart, {passive:false});
+  wrap.addEventListener("touchmove", onMove, {passive:false});
+  wrap.addEventListener("touchend", onEnd);
+}
+
+function resetWizardSelection(){
+  wizardState.selection = null;
+  wizardState.modulePx = null;
+  renderWizardStep(3);
+}
+
+function extractSvgRegion(svgHtml, bbox){
+  // simple approach: render svg in a mini container and clip
+  return `<div style="width:100%;height:100%;overflow:hidden;position:relative">
+    <div style="position:absolute;left:${-bbox.x}px;top:${-bbox.y}px">${svgHtml}</div>
+  </div>`;
+}
+
+/* ---------- STEP 4: SIGNATURES ---------- */
+/* ═══════════════════════════════════════════════════
+   STEP 4: SIGNATURES — modular composition
+   ═══════════════════════════════════════════════════ */
+
+function renderWizardStep4(body, label){
+  label.textContent = "Passo 4 de 7 — Assinaturas da marca";
+  if(!wizardState.signatures) initWizardSignatures();
+  if(!wizardState.grid) generateWizardGrid();
+
+  const sig = wizardState.signatures[wizardState.sigIdx];
+  const mp = wizardState.grid.modulePx || 48;
+  const mpBase = mp;
+
+  // canvas pixel dimensions — proportional to areaW/H
+  const canvasW = Math.min(760, sig.areaW * mpBase * 1.2);
+  const cellPx = Math.min(mpBase * 1.2, canvasW / sig.areaW);
+  const canvasH = Math.round(sig.areaH * cellPx);
+
+  // margin + safe zone in pixels
+  const marginPx = Math.round(sig.margin * cellPx);
+  const safePx = Math.round(sig.safeArea * cellPx);
+
+  // build grid lines
+  const hLines = Array.from({length: sig.areaH + 1}, (_, i) => i * cellPx);
+  const vLines = Array.from({length: sig.areaW + 1}, (_, i) => i * cellPx);
+
+  // build elements
+  const elHtml = (sig.elements||[]).map((el, ei) => {
+    const asset = wizardState.assets[el.slot];
+    if(!asset) return '';
+    const leftPx = Math.round(el.x * cellPx);
+    const topPx = Math.round(el.y * cellPx);
+    const wPx = Math.round(el.w * cellPx);
+    const hPx = Math.round(el.h * cellPx);
+    return `<div class="wiz-sig-element" data-ei="${ei}" data-slot="${el.slot}" style="left:${leftPx}px;top:${topPx}px;width:${wPx}px;height:${hPx}px"><span class="wiz-sig-el-label">${el.slot==='symbol'?'◇':'T'}</span>${asset.data}</div>`;
+  }).join('');
+
+  // grid overlay with major/minor distinction
+  const gridHtml = vLines.map((x, i) =>
+    `<div class="wiz-sig-grid-line v${i>0&&i<sig.areaW?'':' major'}" style="left:${x}px"></div>`
+  ).join('') + hLines.map((y, i) =>
+    `<div class="wiz-sig-grid-line h${i>0&&i<sig.areaH?'':' major'}" style="top:${y}px"></div>`
+  ).join('');
+
+  // margin zone overlay (outer dimming)
+  const marginStyle = `left:${marginPx}px;top:${marginPx}px;width:${canvasW-marginPx*2}px;height:${canvasH-marginPx*2}px`;
+
+  // safe zone overlay
+  const safeX = marginPx + safePx;
+  const safeY = marginPx + safePx;
+  const safeStyle = `left:${safeX}px;top:${safeY}px;width:${canvasW-safeX*2}px;height:${canvasH-safeY*2}px`;
+
+  body.innerHTML = `
+    <div class="wiz-sig-layout">
+      <!-- LEFT: signature list -->
+      <div class="wiz-sig-list" id="wizSigList" style="min-width:180px">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink3);font-weight:700;padding:4px 6px 6px">Variações</div>
+        ${wizardState.signatures.map((s, i) => `
+          <div class="wiz-sig-item${i===wizardState.sigIdx?' active':''}" onclick="selectWizardSignature(${i})">
+            <span class="wiz-sig-icon">${sigIcon(s.type)}</span>
+            <span class="wiz-sig-name">${esc(s.name)}</span>
+            ${wizardState.signatures.length > 1 ? `<button class="wiz-sig-del" onclick="event.stopPropagation();removeWizardSignature(${i})">✕</button>` : ''}
+          </div>
+        `).join('')}
+        <div class="wiz-sig-add" onclick="addWizardSignature()">+ Nova variação</div>
+      </div>
+
+      <!-- RIGHT: canvas + controls -->
+      <div style="display:flex;flex-direction:column;flex:1;min-width:0">
+
+        <!-- canvas -->
+        <div class="wiz-sig-canvas-wrap" id="wizSigCanvas" style="height:${Math.min(480, canvasH)}px">
+          <span class="wiz-sig-label-top">Módulo 1x = ${mp}px &middot; ${sig.areaW}×${sig.areaH} unidades</span>
+          <span class="wiz-sig-label-bottom">${sig.name}</span>
+
+          <!-- margin overlay -->
+          <div class="wiz-sig-margin" style="${marginStyle}">
+            <div class="wiz-sig-safe-fill" style="inset:0"></div>
+          </div>
+          <div class="wiz-sig-margin" style="${safeStyle}">
+            <div class="wiz-sig-safe-fill" style="inset:-${safePx}px;border-color:rgba(45,182,125,.25)"></div>
+          </div>
+
+          <!-- grid -->
+          <div class="wiz-sig-grid">${gridHtml}</div>
+
+          <!-- elements -->
+          ${elHtml}
+          <div class="wiz-sig-snap" id="wizSigSnap"></div>
+        </div>
+
+        <!-- controls -->
+        <div class="wiz-sig-controls" style="margin-top:8px">
+          <div class="wiz-sig-ctrl-group">
+            <label>Tipo</label>
+            <select class="sel" style="font-size:11px;padding:2px 6px;width:auto" onchange="applySigPreset(this.value)">
+              <option value="horizontal"${sig.type==='horizontal'?' selected':''}>Horizontal</option>
+              <option value="vertical"${sig.type==='vertical'?' selected':''}>Vertical</option>
+              <option value="symbol-left"${sig.type==='symbol-left'?' selected':''}>Símbolo à esquerda</option>
+              <option value="symbol-above"${sig.type==='symbol-above'?' selected':''}>Símbolo acima</option>
+              <option value="stacked"${sig.type==='stacked'?' selected':''}>Empilhado</option>
+            </select>
+          </div>
+
+          <div class="wiz-sig-ctrl-divider"></div>
+
+          <div class="wiz-sig-ctrl-group">
+            <label>Área</label>
+            <span class="wiz-sig-xval" id="wizAreaWVal">${sig.areaW}x</span>
+            <input type="range" min="10" max="40" value="${sig.areaW}" oninput="updateSigModular('areaW',+this.value);$('wizAreaWVal').textContent=this.value+'x'">
+            <span style="font-size:10px;color:var(--ink3)">×</span>
+            <span class="wiz-sig-xval" id="wizAreaHVal">${sig.areaH}x</span>
+            <input type="range" min="4" max="20" value="${sig.areaH}" oninput="updateSigModular('areaH',+this.value);$('wizAreaHVal').textContent=this.value+'x'">
+          </div>
+
+          <div class="wiz-sig-ctrl-divider"></div>
+
+          <div class="wiz-sig-ctrl-group">
+            <label>Margem</label>
+            <span class="wiz-sig-xval" id="wizMarginVal">${sig.margin}x</span>
+            <input type="range" min="0" max="8" value="${sig.margin}" oninput="updateSigModular('margin',+this.value);$('wizMarginVal').textContent=this.value+'x'">
+          </div>
+
+          <div class="wiz-sig-ctrl-group">
+            <label>Proteção</label>
+            <span class="wiz-sig-xval" id="wizSafeVal">${sig.safeArea}x</span>
+            <input type="range" min="0" max="6" value="${sig.safeArea}" oninput="updateSigModular('safeArea',+this.value);$('wizSafeVal').textContent=this.value+'x'">
+          </div>
+
+          <div class="wiz-sig-ctrl-group">
+            <label>Espaço</label>
+            <span class="wiz-sig-xval" id="wizGapVal">${sig.gap}x</span>
+            <input type="range" min="0" max="5" value="${sig.gap}" oninput="updateSigModular('gap',+this.value);$('wizGapVal').textContent=this.value+'x'">
+          </div>
+        </div>
+
+        <!-- element position readout -->
+        <div style="display:flex;gap:12px;margin-top:6px;font-size:10px;color:var(--ink3);padding:0 2px">
+          ${(sig.elements||[]).map((el, ei) => {
+            const name = el.slot==='symbol'?'Símbolo':'Tipografia';
+            return `<span><strong style="color:var(--ink2)">${name}:</strong> (${el.x}, ${el.y}) &middot; ${el.w}×${el.h}x</span>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+
+  initSigDrag();
+}
+
+function sigIcon(type){
+  const icons = { horizontal:'⇉', vertical:'⇅', 'symbol-left':'◀', 'symbol-above':'▲', stacked:'▦' };
+  return icons[type] || '◆';
+}
+
+function initWizardSignatures(){
+  const isBoth = wizardState.type === 'both';
+  const areaW = 20, areaH = 8;
+  const gap = 1, margin = 3, safeArea = 2;
+  if(isBoth){
+    wizardState.signatures = [
+      { name:'Principal', type:'horizontal', safeArea, gap, margin, areaW, areaH, elements:[
+        { slot:'symbol', x:1, y:1, w:7, h:6 },
+        { slot:'typography', x:9, y:1, w:9, h:6 }
+      ]},
+    ];
+  } else {
+    wizardState.signatures = [
+      { name:'Principal', type:'horizontal', safeArea, gap, margin, areaW, areaH, elements:[
+        { slot:wizardState.type, x:2, y:1, w:16, h:6 }
+      ]},
+    ];
+  }
+  wizardState.sigIdx = 0;
+}
+
+function selectWizardSignature(idx){
+  wizardState.sigIdx = idx;
+  renderWizardStep(4);
+}
+
+function addWizardSignature(){
+  const ref = wizardState.signatures[wizardState.sigIdx];
+  const newSig = JSON.parse(JSON.stringify(ref));
+  newSig.name = `Variação ${wizardState.signatures.length + 1}`;
+  wizardState.signatures.push(newSig);
+  wizardState.sigIdx = wizardState.signatures.length - 1;
+  renderWizardStep(4);
+}
+
+function removeWizardSignature(idx){
+  if(wizardState.signatures.length <= 1) { toast("Mantenha pelo menos uma assinatura","error"); return; }
+  wizardState.signatures.splice(idx, 1);
+  if(wizardState.sigIdx >= wizardState.signatures.length) wizardState.sigIdx = wizardState.signatures.length - 1;
+  renderWizardStep(4);
+}
+
+function updateSigModular(key, val){
+  const sig = wizardState.signatures[wizardState.sigIdx];
+  if(!sig) return;
+  if(key === 'areaW' || key === 'areaH'){
+    const ratio = val / sig[key];
+    sig[key] = val;
+    // scale elements proportionally
+    if(key === 'areaW'){
+      sig.elements.forEach(el => { el.x = Math.round(el.x * ratio); el.w = Math.max(1, Math.round(el.w * ratio)); });
+    } else {
+      sig.elements.forEach(el => { el.y = Math.round(el.y * ratio); el.h = Math.max(1, Math.round(el.h * ratio)); });
+    }
+  } else {
+    sig[key] = val;
+  }
+  renderWizardStep(4);
+}
+
+function applySigPreset(type){
+  const sig = wizardState.signatures[wizardState.sigIdx];
+  if(!sig) return;
+  sig.type = type;
+  const isBoth = wizardState.type === 'both';
+  const m = sig.margin, g = sig.gap;
+  const aW = sig.areaW, aH = sig.areaH;
+  const innerW = aW - 2*m;
+  const innerH = aH - 2*m;
+  switch(type){
+    case 'horizontal':
+      sig.elements = isBoth
+        ? [{ slot:'symbol', x:m, y:m, w: Math.round(innerW*0.35), h: innerH },
+           { slot:'typography', x:m + Math.round(innerW*0.4) + g, y:m, w: Math.round(innerW*0.6) - g, h: innerH }]
+        : [{ slot:wizardState.type, x:m, y:m, w: innerW, h: innerH }];
+      break;
+    case 'vertical':
+      sig.elements = isBoth
+        ? [{ slot:'symbol', x:Math.round(aW/2 - innerW*0.3), y:m, w: Math.round(innerW*0.55), h: Math.round(innerH*0.45) },
+           { slot:'typography', x:m, y:m + Math.round(innerH*0.5) + g, w: innerW, h: Math.round(innerH*0.5) - g }]
+        : [{ slot:wizardState.type, x:m, y:m, w: innerW, h: innerH }];
+      break;
+    case 'symbol-left':
+      sig.elements = isBoth
+        ? [{ slot:'symbol', x:m, y:m, w: Math.round(innerW*0.35), h: innerH },
+           { slot:'typography', x:m + Math.round(innerW*0.4) + g, y:m, w: innerW - Math.round(innerW*0.4) - g - m, h: innerH }]
+        : [{ slot:wizardState.type, x:m, y:m, w: innerW, h: innerH }];
+      break;
+    case 'symbol-above':
+      sig.elements = isBoth
+        ? [{ slot:'symbol', x:Math.round(aW/2 - innerW*0.25), y:m, w: Math.round(innerW*0.45), h: Math.round(innerH*0.4) },
+           { slot:'typography', x:m, y:m + Math.round(innerH*0.45) + g, w: innerW, h: Math.round(innerH*0.5) - g }]
+        : [{ slot:wizardState.type, x:m, y:m, w: innerW, h: innerH }];
+      break;
+    case 'stacked':
+      sig.elements = isBoth
+        ? [{ slot:'symbol', x:m, y:m, w: Math.round(innerW*0.35), h: innerH },
+           { slot:'typography', x:m + Math.round(innerW*0.4), y:m, w: Math.round(innerW*0.6), h: innerH }]
+        : [{ slot:wizardState.type, x:m, y:m, w: innerW, h: innerH }];
+      break;
+  }
+  renderWizardStep(4);
+}
+
+/* ─── Drag ─── */
+
+function initSigDrag(){
+  const canvas = $("wizSigCanvas");
+  if(!canvas) return;
+  const snap = $("wizSigSnap");
+  let drag = { ei:-1, ox:0, oy:0, origX:0, origY:0, active:false };
+
+  const getCellPx = () => {
+    const sig = wizardState.signatures[wizardState.sigIdx];
+    const mp = wizardState.grid?.modulePx || 48;
+    return Math.min(mp * 1.2, canvas.offsetWidth / sig.areaW);
+  };
+
+  canvas.addEventListener("mousedown", e => {
+    const el = e.target.closest(".wiz-sig-element");
+    if(!el) return;
+    const ei = +el.dataset.ei;
+    const r = canvas.getBoundingClientRect();
+    drag = {
+      ei, active:true,
+      ox: e.clientX,
+      oy: e.clientY,
+      origX: parseFloat(el.style.left),
+      origY: parseFloat(el.style.top),
+    };
+    el.classList.add("dragging");
+    document.querySelectorAll(".wiz-sig-element").forEach(el2 => el2.classList.toggle("selected", +el2.dataset.ei === ei));
+    e.preventDefault();
+  });
+
+  canvas.addEventListener("mousemove", e => {
+    if(!drag.active) return;
+    const sig = wizardState.signatures[wizardState.sigIdx];
+    const cellPx = getCellPx();
+    if(cellPx <= 0) return;
+    const dx = e.clientX - drag.ox;
+    const dy = e.clientY - drag.oy;
+    const newLeft = drag.origX + dx;
+    const newTop = drag.origY + dy;
+    const snapX = Math.round(newLeft / cellPx);
+    const snapY = Math.round(newTop / cellPx);
+    const clampedX = Math.max(0, Math.min(snapX, sig.areaW - sig.elements[drag.ei].w));
+    const clampedY = Math.max(0, Math.min(snapY, sig.areaH - sig.elements[drag.ei].h));
+    sig.elements[drag.ei].x = clampedX;
+    sig.elements[drag.ei].y = clampedY;
+    const px = clampedX * cellPx;
+    const py = clampedY * cellPx;
+    const activeEl = canvas.querySelector(`[data-ei="${drag.ei}"]`);
+    if(activeEl){
+      activeEl.style.left = px + 'px';
+      activeEl.style.top = py + 'px';
+    }
+    if(snap){
+      snap.style.display = 'block';
+      snap.style.left = (clampedX * cellPx - 3) + 'px';
+      snap.style.top = (clampedY * cellPx - 3) + 'px';
+    }
+  });
+
+  const endDrag = () => {
+    if(!drag.active) return;
+    document.querySelectorAll(".wiz-sig-element").forEach(el2 => el2.classList.remove("dragging"));
+    if(snap) snap.style.display = 'none';
+    drag.active = false;
+  };
+  canvas.addEventListener("mouseup", endDrag);
+  canvas.addEventListener("mouseleave", endDrag);
+}
+
+/* ---------- STEP 5: TYPOGRAPHY ---------- */
+function renderWizardStep5(body, label){
+  label.textContent = "Passo 5 de 7 — Tipografia";
+  const fonts = FONTS;
+  const pri = wizardState.fontPri;
+  const sec = wizardState.fontSec;
+  body.innerHTML = `
+    <p style="margin-bottom:14px;color:var(--ink2);font-size:13px">Escolha as fontes da sua identidade visual. As alterações aparecem ao vivo no preview abaixo.</p>
+    <div class="wiz-font-grid">
+      <div class="wiz-font-card">
+        <div class="field-label">Fonte Primária</div>
+        <select class="sel" onchange="wizardState.fontPri=this.value;updateWizardFontPreview()">
+          ${fonts.map(f => `<option value="${f}"${f===pri?' selected':''}>${f}</option>`).join('')}
+        </select>
+        <div class="wiz-font-preview" id="wizFontPriPreview" style="font-family:'${pri}',sans-serif">Aa</div>
+      </div>
+      <div class="wiz-font-card">
+        <div class="field-label">Fonte Secundária</div>
+        <select class="sel" onchange="wizardState.fontSec=this.value;updateWizardFontPreview()">
+          ${fonts.map(f => `<option value="${f}"${f===sec?' selected':''}>${f}</option>`).join('')}
+        </select>
+        <div class="wiz-font-preview" id="wizFontSecPreview" style="font-family:'${sec}',sans-serif">Aa</div>
+      </div>
+    </div>
+    <div style="padding:16px;background:var(--surface2);border-radius:10px;text-align:center;font-size:14px;color:var(--ink2);line-height:1.6">
+      <strong style="color:var(--accent);font-family:'${pri}',sans-serif">Título em primária — Display, H1, H2</strong><br>
+      <span style="font-family:'${sec}',sans-serif">Corpo em secundária — Body, Small, Caption</span>
+    </div>`;
+}
+
+function updateWizardFontPreview(){
+  const pri = wizardState.fontPri;
+  const sec = wizardState.fontSec;
+  const p1 = $("wizFontPriPreview");
+  const p2 = $("wizFontSecPreview");
+  if(p1) p1.style.fontFamily = `'${pri}',sans-serif`;
+  if(p2) p2.style.fontFamily = `'${sec}',sans-serif`;
+  tryLoadGoogleFont(pri);
+  tryLoadGoogleFont(sec);
+}
+
+/* ---------- STEP 6: COLORS ---------- */
+function renderWizardStep6(body, label){
+  label.textContent = "Passo 6 de 7 — Paleta de Cores";
+  if(!wizardState.colors) wizardState.colors = JSON.parse(JSON.stringify(DEFAULT_COLORS()));
+  body.innerHTML = `
+    <p style="margin-bottom:14px;color:var(--ink2);font-size:13px">Defina as cores da sua identidade visual. Clique no círculo para alterar a cor, ajuste o nome e a porcentagem de uso.</p>
+    <div class="wiz-color-grid" id="wizColorGrid">
+      ${wizardState.colors.map((c, i) => renderWizardColorRow(c, i)).join('')}
+    </div>
+    <div class="wiz-color-add" onclick="addWizardColor()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Adicionar cor
+    </div>`;
+}
+
+function renderWizardColorRow(c, idx){
+  return `<div class="wiz-color-row">
+    <input type="color" class="wiz-color-swatch" value="${c.hex}" onchange="updateWizardColor(${idx},'hex',this.value)">
+    <input type="text" value="${c.hex}" onchange="updateWizardColor(${idx},'hex',this.value)" placeholder="#RRGGBB">
+    <span class="wiz-color-name">
+      <input type="text" value="${esc(c.name||'')}" onchange="updateWizardColor(${idx},'name',this.value)" placeholder="Nome" style="background:transparent;border:none;color:var(--ink);font-size:12px;font-weight:600;width:100px">
+    </span>
+    <label style="font-size:11px;color:var(--ink3)">%</label>
+    <input type="number" min="1" max="100" value="${c.pct}" onchange="updateWizardColor(${idx},'pct',this.value);normalizeWizardPercents()">
+    <button class="btn-icon" onclick="removeWizardColor(${idx})" title="Remover cor">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>`;
+}
+
+function updateWizardColor(idx, key, val){
+  if(!wizardState.colors || !wizardState.colors[idx]) return;
+  if(key === 'hex'){
+    val = val.trim();
+    if(!val.startsWith('#')) val = '#' + val;
+    wizardState.colors[idx].hex = val;
+    // update the swatch color picker
+    const row = document.querySelectorAll('.wiz-color-row')[idx];
+    if(row) row.querySelector('.wiz-color-swatch').value = val;
+  } else if(key === 'name'){
+    wizardState.colors[idx].name = val;
+  } else if(key === 'pct'){
+    wizardState.colors[idx].pct = Math.max(1, Math.min(100, +val || 1));
+  }
+}
+
+function normalizeWizardPercents(){
+  const cs = wizardState.colors;
+  if(!cs || !cs.length) return;
+  let sum = cs.reduce((a,c) => a + (+c.pct || 0), 0);
+  if(!sum) { cs.forEach(c => c.pct = Math.round(100/cs.length)); return; }
+  const sc = 100 / sum;
+  cs.forEach(c => c.pct = Math.max(1, Math.round(c.pct * sc)));
+  let drift = 100 - cs.reduce((a,c) => a + c.pct, 0);
+  cs[cs.length-1].pct = Math.max(1, cs[cs.length-1].pct + drift);
+  // re-render percentages in inputs
+  document.querySelectorAll('.wiz-color-row').forEach((row, i) => {
+    if(cs[i]) row.querySelector('input[type="number"]').value = cs[i].pct;
+  });
+}
+
+function addWizardColor(){
+  if(!wizardState.colors) wizardState.colors = [];
+  wizardState.colors.push({ id:uid('c'), hex:'#7F5AF0', alpha:100, pct:Math.max(1, Math.round(100/(wizardState.colors.length+1))), name:`Cor ${wizardState.colors.length+1}` });
+  normalizeWizardPercents();
+  renderWizardStep(6);
+}
+
+function removeWizardColor(idx){
+  if(!wizardState.colors || wizardState.colors.length <= 1) { toast("Mantenha pelo menos uma cor","error"); return; }
+  wizardState.colors.splice(idx, 1);
+  normalizeWizardPercents();
+  renderWizardStep(6);
+}
+
+/* ---------- STEP 7: FINAL REVIEW ---------- */
+function renderWizardStep7(body, label){
+  label.textContent = "Passo 7 de 7 — Revisão final";
+  if(!wizardState.grid) generateWizardGrid();
+  if(!wizardState.colors) wizardState.colors = JSON.parse(JSON.stringify(DEFAULT_COLORS()));
+
+  const g = wizardState.grid;
+  const combined = wizardState.type==='both'
+    ? `<div style="display:flex;gap:16px;align-items:center;justify-content:center;height:100%">
+        ${wizardState.assets.typography?.data || ''}
+        ${wizardState.assets.symbol?.data || ''}
+      </div>`
+    : wizardState.assets[wizardState.type]?.data || '';
+
+  const typeLabel = wizardState.type==='both'?'Tipografia + Símbolo':wizardState.type==='typography'?'Tipografia':'Símbolo';
+
+  body.innerHTML = `
+    <p style="margin-bottom:10px;color:var(--ink2);font-size:13px">Revise todos os parâmetros da identidade visual antes de finalizar.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+      <div style="padding:14px;background:var(--surface2);border-radius:12px;border:1px solid var(--border2)">
+        <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px">Estrutura</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${typeLabel}</div>
+        <div style="font-size:11px;color:var(--ink2)">Módulo 1x: <strong style="color:var(--accent)">${g.modulePx}px</strong> • Grid: ${g.cols}×${g.rows}</div>
+      </div>
+      <div style="padding:14px;background:var(--surface2);border-radius:12px;border:1px solid var(--border2)">
+        <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px">Tipografia</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(wizardState.fontPri)} + ${esc(wizardState.fontSec)}</div>
+        <div style="font-size:11px;color:var(--ink2)">Primária + Secundária</div>
+      </div>
+      <div style="padding:14px;background:var(--surface2);border-radius:12px;border:1px solid var(--border2)">
+        <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px">Assinaturas</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${wizardState.signatures?.length || 0} variação(ões)</div>
+        <div style="font-size:11px;color:var(--ink2)">${(wizardState.signatures||[]).map(s => s.name).join(', ')}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="wiz-canvas-wrap" style="height:200px;cursor:default">
+        ${combined}
+        <div class="wiz-grid-overlay">
+          ${g.hLines.map(y => `<div class="wiz-grid-line h" style="top:${(y/g.containerH)*100}%"></div>`).join('')}
+          ${g.vLines.map(x => `<div class="wiz-grid-line v" style="left:${(x/g.containerW)*100}%"></div>`).join('')}
+        </div>
+      </div>
+      <div style="padding:14px;background:var(--surface2);border-radius:12px;border:1px solid var(--border2)">
+        <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px">Paleta de Cores (${wizardState.colors.length})</div>
+        ${wizardState.colors.map(c => `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="width:16px;height:16px;border-radius:6px;background:${c.hex};border:1px solid var(--border2);flex-shrink:0"></span>
+            <span style="font-size:11px;color:var(--ink);font-weight:600">${esc(c.name||'')}</span>
+            <span style="font-size:10px;color:var(--ink3);margin-left:auto">${c.hex} • ${c.pct}%</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div style="padding:12px;background:var(--surface2);border-radius:10px;font-size:12px;color:var(--ink2);line-height:1.5;text-align:center">
+      Ao finalizar, o projeto será criado com todos os parâmetros. Você poderá ajustar qualquer item no editor.
+    </div>`;
+}
+
+function generateWizardGrid(){
+  const src = wizardState.moduleSource || wizardState.type;
+  const asset = wizardState.assets[src];
+  if(!asset || !wizardState.modulePx) return;
+  const mp = wizardState.modulePx;
+  // use the active signature dimensions when available
+  const sig = wizardState.signatures?.[wizardState.sigIdx];
+  const cols = sig ? sig.areaW : 20;
+  const rows = sig ? sig.areaH : 8;
+  const containerW = cols * mp;
+  const containerH = rows * mp;
+  const hLines = Array.from({length: rows+1}, (_, i) => i * mp);
+  const vLines = Array.from({length: cols+1}, (_, i) => i * mp);
+  wizardState.grid = { modulePx: mp, cols, rows, hLines, vLines, containerW, containerH };
+}
+
+/* ---------- COMPLETE ---------- */
+function completeWizard(){
+  if(!wizardState.grid) generateWizardGrid();
+  if(!wizardState.colors) wizardState.colors = JSON.parse(JSON.stringify(DEFAULT_COLORS()));
+  const structureData = {
+    type: wizardState.type,
+    moduleSource: wizardState.moduleSource,
+    modulePx: wizardState.modulePx,
+    selection: wizardState.selection,
+    grid: wizardState.grid,
+    fontPri: wizardState.fontPri,
+    fontSec: wizardState.fontSec,
+    colors: wizardState.colors,
+    signatures: wizardState.signatures,
+    logoSq: wizardState.type === 'symbol' || wizardState.type === 'both' ? wizardState.assets.symbol || wizardState.assets.typography : null,
+    logoWd: wizardState.type === 'typography' || wizardState.type === 'both' ? wizardState.assets.typography || wizardState.assets.symbol : null,
+  };
+  const p = mkProject(`Projeto ${S.projects.length+1}`, structureData);
+  p.brandImport.lastStats = collectBrandImportStats(p);
+  S.projects.unshift(p);
+  save(S.projects);
+  closeStructureWizard();
+  renderHome();
+  S.pid = p.id;
+  nav('editor');
+  toast("Projeto estrutural criado!","success");
 }
 
 /* ============================================================
