@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Frame Engine Demo</title>
+  <style>
+    body{margin:0;font-family:Inter,Arial,sans-serif;background:#f4f5f9;color:#1e1f2a;display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+    aside{padding:16px;border-right:1px solid #d8dced;background:#fff;display:grid;gap:10px;align-content:start}
+    .row{display:grid;gap:6px}
+    label{font-size:12px;color:#5b6178}
+    button,input{font:inherit;padding:8px;border-radius:8px;border:1px solid #cdd3ea;background:#fff}
+    button{cursor:pointer;background:#7f5af0;color:#fff;border-color:#7f5af0}
+    main{display:grid;place-items:center;padding:20px}
+    canvas{background:#eef1f9;border:1px solid #cfd6ef;border-radius:12px}
+    .sel{font-size:12px;padding:8px;border:1px dashed #94a1d4;border-radius:8px;background:#f7f8fd}
+  </style>
+</head>
+<body>
+  <aside>
+    <h3 style="margin:0">Demo Frame/Artboard</h3>
+    <div class="row">
+      <label>Scroll X</label>
+      <input id="scrollX" type="range" min="0" max="300" value="0" />
+    </div>
+    <div class="row">
+      <label>Scroll Y</label>
+      <input id="scrollY" type="range" min="0" max="300" value="0" />
+    </div>
+    <button id="btnResize">Resize frame (+80 x +40)</button>
+    <button id="btnAuto">Alternar Auto Layout</button>
+    <div class="sel" id="selInfo">Seleção: nenhuma</div>
+  </aside>
+  <main>
+    <canvas id="cv" width="980" height="620"></canvas>
+  </main>
+
+  <script type="module">
+    import { createScene, initSceneRoot, createFrameNode, createNode, addNode, NODE_TYPE, serializeScene, deserializeScene } from '../core/frame/sceneGraph.js';
+    import { renderScene } from '../core/frame/render.js';
+    import { hitTest } from '../core/frame/hitTest.js';
+    import { applyConstraintsOnFrameResize, computeFrameContentBounds, clampFrameScroll } from '../core/frame/layout.js';
+
+    const canvas = document.getElementById('cv');
+    const ctx = canvas.getContext('2d');
+    const scrollX = document.getElementById('scrollX');
+    const scrollY = document.getElementById('scrollY');
+    const selInfo = document.getElementById('selInfo');
+
+    const scene = createScene();
+    initSceneRoot(scene);
+    scene.nodesById[scene.rootId].w = canvas.width;
+    scene.nodesById[scene.rootId].h = canvas.height;
+
+    const frame = addNode(scene, createFrameNode({
+      id: 'frame_main',
+      x: 180,
+      y: 90,
+      w: 430,
+      h: 300,
+      background: '#ffffff',
+      style: { stroke: '#6e79ab' },
+      clipContent: true,
+      scroll: { isScrollable: true, scrollX: 0, scrollY: 0 },
+      layout: { mode: 'NONE', padding: { top: 16, right: 16, bottom: 16, left: 16 }, itemSpacing: 12, alignCross: 'START' }
+    }));
+
+    addNode(scene, createNode({
+      id: 'card_a', type: NODE_TYPE.RECT, parentId: frame.id,
+      x: 24, y: 20, w: 210, h: 120,
+      style: { fill: '#dbe3ff', stroke: '#5a71dd' },
+      constraints: { horizontal: 'LEFT', vertical: 'TOP' }
+    }), frame.id);
+
+    addNode(scene, createNode({
+      id: 'card_b', type: NODE_TYPE.RECT, parentId: frame.id,
+      x: 290, y: 60, w: 180, h: 140,
+      style: { fill: '#ffe4c8', stroke: '#ea9d45' },
+      constraints: { horizontal: 'RIGHT', vertical: 'CENTER' }
+    }), frame.id);
+
+    addNode(scene, createNode({
+      id: 'label_c', type: NODE_TYPE.TEXT, parentId: frame.id,
+      x: 40, y: 380, w: 320, h: 30,
+      style: { text: 'Conteúdo fora da viewport (use scroll)', fill: '#283046', fontSize: 16, fontWeight: 600 },
+      constraints: { horizontal: 'LEFT_RIGHT', vertical: 'BOTTOM' }
+    }), frame.id);
+
+    // Serialização base (DoD)
+    const reloaded = deserializeScene(serializeScene(scene));
+    Object.assign(scene, reloaded);
+
+    function syncScrollUI() {
+      computeFrameContentBounds(scene, frame);
+      clampFrameScroll(frame);
+      const maxX = Math.max(0, frame.contentBounds.w - frame.w);
+      const maxY = Math.max(0, frame.contentBounds.h - frame.h);
+      scrollX.max = String(Math.ceil(maxX));
+      scrollY.max = String(Math.ceil(maxY));
+      scrollX.value = String(frame.scroll.scrollX);
+      scrollY.value = String(frame.scroll.scrollY);
+    }
+
+    function drawSelection(node) {
+      if (!node) return;
+      ctx.save();
+      ctx.strokeStyle = '#2f9bff';
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.5;
+      let wx = node.x, wy = node.y;
+      let p = scene.nodesById[node.parentId];
+      while (p) {
+        wx += p.x - (p.type === 'FRAME' ? (p.scroll?.scrollX || 0) : 0);
+        wy += p.y - (p.type === 'FRAME' ? (p.scroll?.scrollY || 0) : 0);
+        p = scene.nodesById[p.parentId];
+      }
+      ctx.strokeRect(wx, wy, node.w, node.h);
+      ctx.restore();
+    }
+
+    let selected = null;
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      renderScene(ctx, scene);
+      drawSelection(selected);
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+
+    scrollX.addEventListener('input', () => {
+      frame.scroll.scrollX = Number(scrollX.value || 0);
+      clampFrameScroll(frame);
+    });
+    scrollY.addEventListener('input', () => {
+      frame.scroll.scrollY = Number(scrollY.value || 0);
+      clampFrameScroll(frame);
+    });
+
+    document.getElementById('btnResize').addEventListener('click', () => {
+      const prev = { w: frame.w, h: frame.h };
+      frame.w += 80;
+      frame.h += 40;
+      applyConstraintsOnFrameResize(scene, frame, prev, { w: frame.w, h: frame.h });
+      syncScrollUI();
+    });
+
+    document.getElementById('btnAuto').addEventListener('click', () => {
+      frame.layout.mode = frame.layout.mode === 'NONE' ? 'VERTICAL' : 'NONE';
+      syncScrollUI();
+    });
+
+    canvas.addEventListener('click', (ev) => {
+      const r = canvas.getBoundingClientRect();
+      const pt = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      selected = hitTest(scene, pt);
+      selInfo.textContent = `Seleção: ${selected ? `${selected.id} (${selected.type})` : 'nenhuma'}`;
+    });
+
+    syncScrollUI();
+  </script>
+</body>
+</html>
